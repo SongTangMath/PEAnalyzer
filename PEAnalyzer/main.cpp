@@ -1,27 +1,61 @@
 #include <windows.h>
+#include <WinTrust.h>
 #include "resource.h"
 #include <string>
 #include <vector>
 #include <map>
 LRESULT CALLBACK WndProc (HWND, UINT, WPARAM, LPARAM);
-BOOL CALLBACK AboutDlgProc (HWND , UINT, WPARAM, LPARAM);
-int AnalyzePEFile(char* filebuffer,int len,IMAGE_DOS_HEADER* pimage_dos_header,IMAGE_NT_HEADERS* pimage_nt_headers,
+
+int AnalyzePEFile(char* filebuffer,size_t filelen,IMAGE_DOS_HEADER* pimage_dos_header,IMAGE_NT_HEADERS* pimage_nt_headers,
 				  std::vector<IMAGE_SECTION_HEADER>&vec);
 std::wstring CollectInformationFromIMAGE_DOS_HEADER(IMAGE_DOS_HEADER image_dos_header);
 std::wstring CollectInformationFromIMAGE_NT_HEADERS(IMAGE_NT_HEADERS image_nt_headers);
 std::wstring CollectInformationFromIMAGE_SECTION_HEADER(IMAGE_SECTION_HEADER image_section_header);
-std::wstring CollectInformationFromIMAGE_DATA_DIRECTORY(char* filebuffer,unsigned int filelen,
+std::wstring CollectInformationFromIMAGE_DATA_DIRECTORY(char* filebuffer,size_t filelen,
 			IMAGE_DATA_DIRECTORY* pimage_data_directory,std::vector<IMAGE_SECTION_HEADER>&vec);
-std::wstring CollectInformationFromIMAGE_EXPORT_DIRECTORY(char* filebuffer,unsigned int filelen,
+std::wstring CollectInformationFromIMAGE_EXPORT_DIRECTORY(char* filebuffer,size_t filelen,
 	std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_EXPORT_DIRECTORY image_export_directory);
-std::wstring CollectInformationFromIMAGE_IMPORT_DESCRIPTOR (char* filebuffer,unsigned int filelen,
+std::wstring CollectInformationFromIMAGE_IMPORT_DESCRIPTOR (char* filebuffer,size_t filelen,
 			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_IMPORT_DESCRIPTOR image_import_descriptor);
+std::wstring CollectInformationFromIMAGE_RESOURCE_DIRECTORY(char* filebuffer,size_t filelen,
+	std::vector<IMAGE_SECTION_HEADER>&vec ,IMAGE_RESOURCE_DIRECTORY * poriginal,IMAGE_RESOURCE_DIRECTORY* pcurrent,WORD layer_index);
+std::wstring CollectInformationFromIMAGE_RUNTIME_FUNCTION_ENTRY (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_RUNTIME_FUNCTION_ENTRY image_runtime_function_entry);
+std::wstring CollectInformationFromWIN_CERTIFICATE (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,WIN_CERTIFICATE win_certificate);
+std::wstring CollectInformationFromIMAGE_BASE_RELOCATION (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_BASE_RELOCATION* pimage_base_relocation);
+std::wstring CollectInformationFromIMAGE_DEBUG_DIRECTORY (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_DEBUG_DIRECTORY* pimage_debug_directory);
 
+std::wstring CollectInformationFromIMAGE_ARCHITECTURE_HEADER (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_ARCHITECTURE_HEADER* pimage_architecture_header);
+std::wstring CollectInformationFromIMAGE_TLS_DIRECTORY (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_TLS_DIRECTORY* pimage_tls_directory);
 
-std::wstring GetNameFromFileOffset(char* filebuffer,unsigned int filelen,unsigned int offset);
+std::wstring CollectInformationFromIMAGE_LOAD_CONFIG_DIRECTORY(char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_LOAD_CONFIG_DIRECTORY* pimage_load_config_directory);
+
+std::wstring CollectInformationFromIMAGE_BOUND_IMPORT_DESCRIPTOR(char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_BOUND_IMPORT_DESCRIPTOR* pimage_bound_descriptor);
+std::wstring CollectInformationFromIMAGE_DELAYLOAD_DESCRIPTOR(char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_DELAYLOAD_DESCRIPTOR* pimage_delayload_descriptor);
+
+std::wstring CollectInformationFromIMAGE_COR20_HEADER(char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_COR20_HEADER* pimage_cor20_header);
+
+std::wstring GetNameFromFileOffset(char* filebuffer,size_t filelen,size_t offset);
 std::wstring MultiCharToWideString(const char* str);
-std::wstring GetNameFromRVA(char* filebuffer,unsigned int filelen,std::vector<IMAGE_SECTION_HEADER>&vec,unsigned int RVA);
-int RVAToFOA(std::vector<IMAGE_SECTION_HEADER>&vec,unsigned int RVA);
+std::wstring GetNameFromRVA(char* filebuffer,size_t filelen,std::vector<IMAGE_SECTION_HEADER>&vec,size_t RVA);
+std::wstring GetResourceTypeNameById(WORD id);
+std::wstring GetIMAGE_FILE_HEADER_Machine_Name(int data);
+std::wstring GetIMAGE_FILE_HEADER_Characterstric_Info(int data);
+std::wstring GetIMAGE_OPTIONAL_HEADER_Magic_Name(int data);
+std::wstring GetIMAGE_OPTIONAL_HEADER_Subsystem_Name(int data);
+std::wstring GetIMAGE_OPTIONAL_HEADER_DllCharacteristics_Info(int data);
+std::wstring GetIMAGE_SECTION_HEADER_Characteristics_Info(int data);
+std::wstring GetIMAGE_IMAGE_DEBUG_DIRECTORY_Type_Name(int data);
+size_t RVAToFOA(std::vector<IMAGE_SECTION_HEADER>&vec,size_t RVA);
 bool operator==(const IMAGE_SECTION_HEADER &a, const IMAGE_SECTION_HEADER &b);
 bool operator!=(const IMAGE_SECTION_HEADER &a, const IMAGE_SECTION_HEADER &b);
 bool operator==(const IMAGE_IMPORT_DESCRIPTOR &a, const IMAGE_IMPORT_DESCRIPTOR &b);
@@ -149,7 +183,9 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 				MessageBox(NULL,TEXT("argument incorrect"),TEXT("hints"),0);
 				break;
 			}
-			DWORD filelen=GetFileSize(hfile,NULL);
+			DWORD fileLengthArray[2];
+			fileLengthArray[0]=GetFileSize(hfile,&fileLengthArray[1]);
+			size_t filelen=*(size_t*)fileLengthArray;
 			if(filelen<sizeof(IMAGE_DOS_HEADER)){
 				MessageBox(NULL,TEXT("this is not a valid PE file"),TEXT("hints"),0);
 				break;
@@ -187,7 +223,7 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	return DefWindowProc (hwnd, message, wParam, lParam) ;
 }
 
-int AnalyzePEFile(char* filebuffer,int filelen,IMAGE_DOS_HEADER* pimage_dos_header,
+int AnalyzePEFile(char* filebuffer,size_t filelen,IMAGE_DOS_HEADER* pimage_dos_header,
 				  IMAGE_NT_HEADERS* pimage_nt_headers,std::vector<IMAGE_SECTION_HEADER>&vec)
 	{
 
@@ -346,15 +382,17 @@ std::wstring CollectInformationFromIMAGE_DOS_HEADER(IMAGE_DOS_HEADER image_dos_h
 }
 
 std::wstring CollectInformationFromIMAGE_NT_HEADERS(IMAGE_NT_HEADERS image_nt_headers){
-	wchar_t buf[64];
-	std::wstring s=TEXT("DWORD Signature 魔数, 00004550h\r\n");
+	wchar_t buf[256];
+	std::wstring s=TEXT("DWORD Signature , 00004550h\r\n");
 	wsprintf(buf,L"0x%x\r\n",image_nt_headers.Signature);
 	s+=buf;
 	s+=TEXT("下面是IMAGE_FILE_HEADER部分\r\n");
 
 	s+=TEXT("WORD  Machine \r\n");
-	wsprintf(buf,L"0x%x\r\n",image_nt_headers.FileHeader.Machine);
+	wsprintf(buf,L"0x%x ",image_nt_headers.FileHeader.Machine);
 	s+=buf;
+	s+=GetIMAGE_FILE_HEADER_Machine_Name(image_nt_headers.FileHeader.Machine);
+	s+=TEXT("\r\n");
 
 	s+=TEXT("WORD  NumberOfSections \r\n");
 	wsprintf(buf,L"0x%x\r\n",image_nt_headers.FileHeader.NumberOfSections);
@@ -377,13 +415,17 @@ std::wstring CollectInformationFromIMAGE_NT_HEADERS(IMAGE_NT_HEADERS image_nt_he
 	s+=buf;
 
 	s+=TEXT("WORD  Characteristics\r\n");
-	wsprintf(buf,L"0x%x\r\n",image_nt_headers.FileHeader.Characteristics);
+	wsprintf(buf,L"0x%x ",image_nt_headers.FileHeader.Characteristics);
 	s+=buf;
+	s+=GetIMAGE_FILE_HEADER_Characterstric_Info(image_nt_headers.FileHeader.Characteristics);
+	s+=TEXT("\r\n");
 
-	s+=TEXT("下面是IMAGE_OPTIONAL_HEADER64部分\r\n");
+	s+=TEXT("the following is IMAGE_OPTIONAL_HEADER64\r\n");
 	s+=TEXT("WORD                 Magic\r\n");
-	wsprintf(buf,L"0x%x\r\n",image_nt_headers.OptionalHeader.Magic);
+	wsprintf(buf,L"0x%x ",image_nt_headers.OptionalHeader.Magic);
 	s+=buf;
+	s+=GetIMAGE_OPTIONAL_HEADER_Magic_Name(image_nt_headers.OptionalHeader.Magic);
+	s+=TEXT("\r\n");
 
 	s+=TEXT("BYTE                 MajorLinkerVersion\r\n");
 	wsprintf(buf,L"0x%x\r\n",image_nt_headers.OptionalHeader.MajorLinkerVersion);
@@ -467,12 +509,16 @@ std::wstring CollectInformationFromIMAGE_NT_HEADERS(IMAGE_NT_HEADERS image_nt_he
 	s+=buf;
 
 	s+=TEXT("WORD                 Subsystem;\r\n");
-	wsprintf(buf,L"0x%x\r\n",image_nt_headers.OptionalHeader.Subsystem);
+	wsprintf(buf,L"0x%x ",image_nt_headers.OptionalHeader.Subsystem);
 	s+=buf;
+	s+=GetIMAGE_OPTIONAL_HEADER_Subsystem_Name(image_nt_headers.OptionalHeader.Subsystem);
+	s+=TEXT("\r\n");
 
 	s+=TEXT("WORD                 DllCharacteristics;\r\n");
-	wsprintf(buf,L"0x%x\r\n",image_nt_headers.OptionalHeader.DllCharacteristics);
+	wsprintf(buf,L"0x%x ",image_nt_headers.OptionalHeader.DllCharacteristics);
 	s+=buf;
+	s+=GetIMAGE_OPTIONAL_HEADER_DllCharacteristics_Info(image_nt_headers.OptionalHeader.DllCharacteristics);
+	s+=TEXT("\r\n");
 
 	s+=TEXT("ULONGLONG            SizeOfStackReserve;\r\n");
 	swprintf(buf,255,L"0x%llx\r\n",image_nt_headers.OptionalHeader.SizeOfStackReserve);
@@ -498,8 +544,10 @@ std::wstring CollectInformationFromIMAGE_NT_HEADERS(IMAGE_NT_HEADERS image_nt_he
 	wsprintf(buf,L"0x%x\r\n",image_nt_headers.OptionalHeader.NumberOfRvaAndSizes);
 	s+=buf;
 
-	s+=TEXT("IMAGE_DATA_DIRECTORY DataDirectory[IMAGE_NUMBEROF_DIRECTORY_ENTRIES];\r\n");
-	s+=TEXT("IMAGE_NUMBEROF_DIRECTORY_ENTRIES=16\r\n\r\n");
+	wsprintf(buf,TEXT("IMAGE_DATA_DIRECTORY DataDirectory[IMAGE_NUMBEROF_DIRECTORY_ENTRIES=%d];\r\n\r\n"),
+		IMAGE_NUMBEROF_DIRECTORY_ENTRIES);
+	s+=buf;
+	
 
 	wsprintf(buf,L"DataDirectory[%d]=IMAGE_DIRECTORY_ENTRY_EXPORT\r\n",IMAGE_DIRECTORY_ENTRY_EXPORT);
 	s+=buf;
@@ -619,16 +667,16 @@ std::wstring CollectInformationFromIMAGE_NT_HEADERS(IMAGE_NT_HEADERS image_nt_he
 }
 
 std::wstring CollectInformationFromIMAGE_SECTION_HEADER(IMAGE_SECTION_HEADER image_section_header){
-	wchar_t buf[64];
+	wchar_t buf[256];
 	std::wstring s=TEXT("BYTE  Name[IMAGE_SIZEOF_SHORT_NAME=8];\r\n");	
 	size_t convertedChars=0;	
 	mbstowcs_s(&convertedChars,buf,IMAGE_SIZEOF_SHORT_NAME,(const char*)image_section_header.Name,_TRUNCATE);
-	//s+=TEXT("\"");
+	
 	s+=buf;
 	s+=TEXT("\r\n");
 
 	s+=TEXT("union {DWORD PhysicalAddress; DWORD VirtualSize;} Misc\r\n");
-	wsprintf(buf,L"0x%x\r\n",image_section_header.Misc);
+	wsprintf(buf,L"0x%x\r\n",image_section_header.Misc.PhysicalAddress);
 	s+=buf;
 
 	s+=TEXT("DWORD VirtualAddress;\r\n");
@@ -661,15 +709,18 @@ std::wstring CollectInformationFromIMAGE_SECTION_HEADER(IMAGE_SECTION_HEADER ima
 
 	s+=TEXT("DWORD Characteristics;\r\n");
 	wsprintf(buf,L"0x%x\r\n",image_section_header.Characteristics);
+	
 	s+=buf;
+	s+=GetIMAGE_SECTION_HEADER_Characteristics_Info(image_section_header.Characteristics);
+	
 
 	return s;
 }
 
-std::wstring CollectInformationFromIMAGE_DATA_DIRECTORY(char* filebuffer,unsigned int filelen,
+std::wstring CollectInformationFromIMAGE_DATA_DIRECTORY(char* filebuffer,size_t filelen,
 	IMAGE_DATA_DIRECTORY* pimage_data_directory,std::vector<IMAGE_SECTION_HEADER>&vec){
 	
-	unsigned int FOA=0;
+	ULONGLONG FOA=0;
 	wchar_t buf[256];
 	std::vector<IMAGE_IMPORT_DESCRIPTOR>image_import_descriptor_vector;
 	IMAGE_IMPORT_DESCRIPTOR image_import_descriptor_zero;
@@ -688,11 +739,12 @@ std::wstring CollectInformationFromIMAGE_DATA_DIRECTORY(char* filebuffer,unsigne
 	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_EXPORT=0]导出表\r\n");
 	s+=CollectInformationFromIMAGE_EXPORT_DIRECTORY(filebuffer,filelen,vec,*(IMAGE_EXPORT_DIRECTORY*)(filebuffer+FOA));	
 	}
-	else s+=TEXT("no IMAGE_EXPORT_DIRECTORY found in this image\r\n");
+	else s+=TEXT("no IMAGE_EXPORT_DIRECTORY=0 found in this image\r\n");
 	s+=TEXT("\r\n");
 
 
 	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress){
+		s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_IMPORT=1]导入表\r\n");
 		IMAGE_IMPORT_DESCRIPTOR* pimage_import_descriptor=(IMAGE_IMPORT_DESCRIPTOR*)
 			(filebuffer+RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress));
 		while(*pimage_import_descriptor!=image_import_descriptor_zero)
@@ -710,12 +762,134 @@ std::wstring CollectInformationFromIMAGE_DATA_DIRECTORY(char* filebuffer,unsigne
 			s+=TEXT("\r\n");
 		}
 	}
-	else s+=TEXT("no IMAGE_IMPORT_DESCRIPTOR found in this image\r\n");
+	else s+=TEXT("no IMAGE_IMPORT_DESCRIPTOR=1 found in this image\r\n");
+	s+=TEXT("\r\n");
 
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress){
+		s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_RESOURCE=2]资源表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress);
+	IMAGE_RESOURCE_DIRECTORY* poriginal=(IMAGE_RESOURCE_DIRECTORY*)(filebuffer+FOA);
+	s+=CollectInformationFromIMAGE_RESOURCE_DIRECTORY(filebuffer,filelen,vec,poriginal,poriginal,0);	
+	}
+	else s+=TEXT("no IMAGE_RESOURCE_DIRECTORY=2 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_EXCEPTION].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_EXCEPTION=3]异常表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_EXCEPTION].VirtualAddress);
+		IMAGE_RUNTIME_FUNCTION_ENTRY image_runtime_function_entry=*(IMAGE_RUNTIME_FUNCTION_ENTRY*)(filebuffer+FOA);
+		s+=CollectInformationFromIMAGE_RUNTIME_FUNCTION_ENTRY (filebuffer, filelen,
+	vec, image_runtime_function_entry);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_EXCEPTION=3 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_SECURITY=4]数字签名表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_SECURITY].VirtualAddress);
+		WIN_CERTIFICATE win_certificate=*(WIN_CERTIFICATE*)(filebuffer+FOA);
+		s+=CollectInformationFromWIN_CERTIFICATE (filebuffer, filelen,
+	vec, win_certificate);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_SECURITY=4 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_BASERELOC=5]基址重定位表\r\n");
+	
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
+		IMAGE_BASE_RELOCATION *pimage_base_relocation=(IMAGE_BASE_RELOCATION*)(filebuffer+FOA);
+		s+=CollectInformationFromIMAGE_BASE_RELOCATION (filebuffer, filelen,
+			vec, pimage_base_relocation);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_BASERELOC=5 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_DEBUG].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_DEBUG=6]调试信息表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_DEBUG].VirtualAddress);
+		IMAGE_DEBUG_DIRECTORY* pimage_debug_directory=(IMAGE_DEBUG_DIRECTORY*)(filebuffer+FOA);
+		s+=CollectInformationFromIMAGE_DEBUG_DIRECTORY ( filebuffer, filelen,
+			vec,pimage_debug_directory);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_DEBUG found=6 in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_ARCHITECTURE].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_ARCHITECTURE=7]版权信息表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_ARCHITECTURE].VirtualAddress);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_ARCHITECTURE=7 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_GLOBALPTR].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_GLOBALPTR=8]全局指针表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_GLOBALPTR].VirtualAddress);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_GLOBALPTR=8 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_TLS=9]Thread Local Storage线程局部存储表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
+		IMAGE_TLS_DIRECTORY* pimage_tls_directory=(IMAGE_TLS_DIRECTORY*)(filebuffer+FOA);
+		s+= CollectInformationFromIMAGE_TLS_DIRECTORY (filebuffer, filelen,
+			vec, pimage_tls_directory);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_TLS=9 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG=10]加载配置表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress);
+		IMAGE_LOAD_CONFIG_DIRECTORY* pimage_load_config_directory=(IMAGE_LOAD_CONFIG_DIRECTORY*)(filebuffer+FOA);
+		s+=CollectInformationFromIMAGE_LOAD_CONFIG_DIRECTORY( filebuffer, filelen,
+			vec, pimage_load_config_directory);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG=10 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT=11]绑定导入表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT].VirtualAddress);
+		IMAGE_BOUND_IMPORT_DESCRIPTOR* pimage_load_config_directory=(IMAGE_BOUND_IMPORT_DESCRIPTOR*)(filebuffer+FOA);
+		s+= CollectInformationFromIMAGE_BOUND_IMPORT_DESCRIPTOR(filebuffer, filelen,
+			vec, pimage_load_config_directory);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT=11 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_IAT=12]导入地址表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_IAT].VirtualAddress);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_IAT=12 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT=13]延迟加载表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT].VirtualAddress);
+		IMAGE_DELAYLOAD_DESCRIPTOR* pimage_delayload_descriptor=(IMAGE_DELAYLOAD_DESCRIPTOR*)(filebuffer+FOA);
+		s+=CollectInformationFromIMAGE_DELAYLOAD_DESCRIPTOR(filebuffer, filelen,
+			vec, pimage_delayload_descriptor);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_IAT=13 found in this image\r\n");
+	s+=TEXT("\r\n");
+
+
+	if(pimage_data_directory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].VirtualAddress){
+	s+=TEXT("image_data_directory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR=14]COM Runtime descriptor表\r\n");
+		FOA=RVAToFOA(vec,pimage_data_directory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].VirtualAddress);
+		IMAGE_COR20_HEADER* pimage_cor20_header=(IMAGE_COR20_HEADER*)(filebuffer+FOA);
+		s+=CollectInformationFromIMAGE_COR20_HEADER( filebuffer, filelen,
+			vec, pimage_cor20_header);
+	}
+	else s+=TEXT("no IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR=14 found in this image\r\n");
+	s+=TEXT("\r\n");
 
 	return s;
 	}
-std::wstring CollectInformationFromIMAGE_EXPORT_DIRECTORY(char* filebuffer,unsigned int filelen,
+std::wstring CollectInformationFromIMAGE_EXPORT_DIRECTORY(char* filebuffer,size_t filelen,
 	std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_EXPORT_DIRECTORY image_export_directory){
 	wchar_t buf[256];
 	size_t convertedChars=0;
@@ -740,7 +914,7 @@ std::wstring CollectInformationFromIMAGE_EXPORT_DIRECTORY(char* filebuffer,unsig
 
 	s+=TEXT("DWORD   Name\r\n");
 	wsprintf(buf,L"0x%x\r\n",image_export_directory.Name );
-	int FOA=RVAToFOA(vec,image_export_directory.Name);
+	ULONGLONG FOA=RVAToFOA(vec,image_export_directory.Name);
 	s+=GetNameFromFileOffset(filebuffer,filelen,FOA);
 	s+=TEXT("\r\n");
 
@@ -769,9 +943,9 @@ std::wstring CollectInformationFromIMAGE_EXPORT_DIRECTORY(char* filebuffer,unsig
 	s+=buf;
 	s+=TEXT("scanning for functions in this table...\r\n");
 
-	int AddressOfFunctionsFOA=RVAToFOA(vec,image_export_directory.AddressOfFunctions);
-	int AddressOfNamesFOA=RVAToFOA(vec,image_export_directory.AddressOfNames);
-	int AddressOfNameOrdinalsFOA=RVAToFOA(vec,image_export_directory.AddressOfNameOrdinals);
+	ULONGLONG AddressOfFunctionsFOA=RVAToFOA(vec,image_export_directory.AddressOfFunctions);
+	ULONGLONG AddressOfNamesFOA=RVAToFOA(vec,image_export_directory.AddressOfNames);
+	ULONGLONG AddressOfNameOrdinalsFOA=RVAToFOA(vec,image_export_directory.AddressOfNameOrdinals);
 
 
 
@@ -779,17 +953,17 @@ std::wstring CollectInformationFromIMAGE_EXPORT_DIRECTORY(char* filebuffer,unsig
 	int* pfunction_names_table=(int*)(filebuffer+AddressOfNamesFOA);
 	std::map<std::wstring,short> name_to_ordinal_map;
 	std::map<int,int>ordinal_to_RVA_map;
-	std::map<short,std::wstring> ordinal_to_name_map;
-	for(int i=0;i<image_export_directory.NumberOfNames;i++)
+	std::map<WORD,std::wstring> ordinal_to_name_map;
+	for(DWORD i=0;i<image_export_directory.NumberOfNames;i++)
 	{
 		
 		std::wstring function_name=GetNameFromRVA(filebuffer,filelen,vec,pfunction_names_table[i]);
-		short function_ordinal=*(short*)(filebuffer+AddressOfNameOrdinalsFOA+2*i);
+		WORD function_ordinal=*(WORD*)(filebuffer+AddressOfNameOrdinalsFOA+2*i);
 		name_to_ordinal_map[function_name]=function_ordinal;
 	}
 	for(auto entry:name_to_ordinal_map)
 		ordinal_to_name_map[entry.second]=entry.first;
-	for(short i=0;i<image_export_directory.NumberOfFunctions;i++){
+	for(DWORD i=0;i<image_export_directory.NumberOfFunctions;i++){
 		int function_RVA=*(int*)(filebuffer+AddressOfFunctionsFOA+4*i);
 		if(ordinal_to_name_map.find(i)!=ordinal_to_name_map.end())
 			wsprintf(buf,L"ordinal = %d,name = %s,RVA = 0x%x\r\n",i,ordinal_to_name_map[i].c_str(),function_RVA);
@@ -800,7 +974,7 @@ std::wstring CollectInformationFromIMAGE_EXPORT_DIRECTORY(char* filebuffer,unsig
 	return s;
 }
 
-std::wstring CollectInformationFromIMAGE_IMPORT_DESCRIPTOR (char* filebuffer,unsigned int filelen,
+std::wstring CollectInformationFromIMAGE_IMPORT_DESCRIPTOR (char* filebuffer,size_t filelen,
 			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_IMPORT_DESCRIPTOR image_import_descriptor){
 	wchar_t buf[256];
 	size_t convertedChars=0;
@@ -844,7 +1018,7 @@ std::wstring CollectInformationFromIMAGE_IMPORT_DESCRIPTOR (char* filebuffer,uns
 			wsprintf(buf,L"ordinal = %d",image_thunk_data_vector[i].u1.Ordinal^IMAGE_ORDINAL_FLAG32);
 		else {
 			ULONGLONG RVA=image_thunk_data_vector[i].u1.AddressOfData;
-			int FOA=RVAToFOA(vec,RVA);
+			size_t FOA=RVAToFOA(vec,RVA);
 			IMAGE_IMPORT_BY_NAME* pimage_import_by_name=
 				(IMAGE_IMPORT_BY_NAME*)(filebuffer+FOA);
 			std::wstring s=MultiCharToWideString(pimage_import_by_name->Name);
@@ -854,34 +1028,709 @@ std::wstring CollectInformationFromIMAGE_IMPORT_DESCRIPTOR (char* filebuffer,uns
 	}
 	return s;
 }
-std::wstring GetNameFromFileOffset(char* filebuffer,unsigned int filelen,unsigned int FOA){
+std::wstring CollectInformationFromIMAGE_RESOURCE_DIRECTORY(char* filebuffer,size_t filelen,
+	std::vector<IMAGE_SECTION_HEADER>&vec ,IMAGE_RESOURCE_DIRECTORY * poriginal,IMAGE_RESOURCE_DIRECTORY* pcurrent,WORD layer_index){
+	wchar_t buf[256];
+	size_t convertedChars=0;
+	std::wstring s;
+	/*
+	s+=TEXT("DWORD Characteristics\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_resource_directory->Characteristics);
+	s+=buf;
+
+	s+=TEXT("DWORD TimeDateStamp\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_resource_directory->TimeDateStamp);
+	s+=buf;
+
+	s+=TEXT("WORD MajorVersion\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_resource_directory->MajorVersion);
+	s+=buf;
+
+	s+=TEXT("WORD MinorVersion\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_resource_directory->MinorVersion);
+	s+=buf;
+	*/
+	wsprintf(buf,L"layer_index= %d\r\n",layer_index);
+	s+=buf;
+	s+=TEXT("WORD NumberOfNamedEntries\r\n");
+	wsprintf(buf,L"0x%x\r\n",pcurrent->NumberOfNamedEntries);
+	s+=buf;
+
+	s+=TEXT("WORD NumberOfIdEntries\r\n");
+	wsprintf(buf,L"0x%x\r\n",pcurrent->NumberOfIdEntries);
+	s+=buf;
+
+	char* IMAGE_RESOURCE_DIRECTORY_ENTRY_start_point=
+		(char*)(pcurrent+1);
+	for(WORD index=0;index<pcurrent->NumberOfNamedEntries+pcurrent->NumberOfIdEntries;index++){
+	IMAGE_RESOURCE_DIRECTORY_ENTRY *IMAGE_RESOURCE_DIRECTORY_ENTRY_pcurrent=
+		(IMAGE_RESOURCE_DIRECTORY_ENTRY*)(IMAGE_RESOURCE_DIRECTORY_ENTRY_start_point+index*sizeof(IMAGE_RESOURCE_DIRECTORY_ENTRY));
+
+	if(IMAGE_RESOURCE_DIRECTORY_ENTRY_pcurrent->NameIsString){
+		IMAGE_RESOURCE_DIR_STRING_U* resource_name=
+			(IMAGE_RESOURCE_DIR_STRING_U*)((char*)poriginal+IMAGE_RESOURCE_DIRECTORY_ENTRY_pcurrent->NameOffset);
+		wchar_t* name_string=new wchar_t[resource_name->Length+1];
+		//size_t temp=wcslen(resource_name->NameString);
+		memset(name_string,0,(resource_name->Length+1)*sizeof(wchar_t));
+		memcpy(name_string,resource_name->NameString,sizeof(wchar_t)*resource_name->Length);
+		s+=TEXT("resource name ");
+		s+=name_string;
+		delete[]name_string;
+
+	}
+	else {
+		if(layer_index==0)
+		s+=GetResourceTypeNameById(IMAGE_RESOURCE_DIRECTORY_ENTRY_pcurrent->Id);
+		else if(layer_index==1){
+			wsprintf(buf,TEXT("resource id=0x%d"),IMAGE_RESOURCE_DIRECTORY_ENTRY_pcurrent->Id);
+		s+=buf;}
+	}
+	s+=TEXT("\r\n");
+	if(IMAGE_RESOURCE_DIRECTORY_ENTRY_pcurrent->DataIsDirectory){
+		IMAGE_RESOURCE_DIRECTORY* pnext_level=(IMAGE_RESOURCE_DIRECTORY*)
+			((char*)poriginal+IMAGE_RESOURCE_DIRECTORY_ENTRY_pcurrent->OffsetToDirectory);
+		s+=CollectInformationFromIMAGE_RESOURCE_DIRECTORY(filebuffer,filelen,vec,poriginal,pnext_level,layer_index+1);
+	}
+	else{
+	IMAGE_RESOURCE_DATA_ENTRY* pdata_entry=(IMAGE_RESOURCE_DATA_ENTRY*)((char*)poriginal+IMAGE_RESOURCE_DIRECTORY_ENTRY_pcurrent->OffsetToDirectory);
+	s+=TEXT("DWORD   OffsetToData\r\n");
+	wsprintf(buf,L"0x%x\r\n",pdata_entry->OffsetToData);
+	s+=buf;
+
+	s+=TEXT("DWORD   Size\r\n");
+	wsprintf(buf,L"0x%x\r\n",pdata_entry->Size);
+	s+=buf;
+
+	s+=TEXT("DWORD   CodePage\r\n");
+	wsprintf(buf,L"0x%x\r\n",pdata_entry->CodePage);
+	s+=buf;
+
+	s+=TEXT("DWORD   Reserved\r\n");
+	wsprintf(buf,L"0x%x\r\n",pdata_entry->Reserved);
+	s+=buf;
+	}
+	
+	}
+	
+	return s;
+}
+std::wstring CollectInformationFromIMAGE_RUNTIME_FUNCTION_ENTRY (char* filebuffer,size_t filelen,
+	std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_RUNTIME_FUNCTION_ENTRY image_ia64_runtime_function_entry){
+		wchar_t buf[256];
+	size_t convertedChars=0;
+	std::wstring s;
+
+	s+=TEXT("DWORD   BeginAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",image_ia64_runtime_function_entry.BeginAddress);
+	s+=buf;
+
+	s+=TEXT("DWORD   EndAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",image_ia64_runtime_function_entry.EndAddress);
+	s+=buf;
+
+	s+=TEXT("DWORD   UnwindInfoAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",image_ia64_runtime_function_entry.UnwindInfoAddress);
+	s+=buf;
+
+	size_t  BeginAddressFOA=RVAToFOA(vec,image_ia64_runtime_function_entry.BeginAddress);
+	size_t  EndAddressFOA=RVAToFOA(vec,image_ia64_runtime_function_entry.EndAddress);
+	size_t  UnwindInfoAddressFOA=RVAToFOA(vec,image_ia64_runtime_function_entry.UnwindInfoAddress);
+	//UNWIND_INFO* punwind_info=(UNWIND_INFO*)(filebuffer+UnwindInfoAddressFOA);
+	return s;
+}
+std::wstring CollectInformationFromWIN_CERTIFICATE (char* filebuffer,size_t filelen,
+	std::vector<IMAGE_SECTION_HEADER>&vec,WIN_CERTIFICATE win_certificate){
+			wchar_t buf[256];
+	size_t convertedChars=0;
+	std::wstring s;
+
+	s+=TEXT("DWORD   dwLength\r\n");
+	wsprintf(buf,L"0x%x\r\n",win_certificate.dwLength);
+	s+=buf;
+
+	s+=TEXT("WORD   wRevision\r\n");
+	wsprintf(buf,L"0x%x\r\n",win_certificate.wRevision);
+	s+=buf;
+
+	s+=TEXT("WORD   wCertificateType\r\n");
+	wsprintf(buf,L"0x%x\r\n",win_certificate.wCertificateType);
+	s+=buf;
+
+	s+=TEXT("BYTE   bCertificate\r\n");
+	wsprintf(buf,L"0x%x\r\n",win_certificate.bCertificate[0]);
+	s+=buf;
+	return s;
+}
+
+std::wstring CollectInformationFromIMAGE_BASE_RELOCATION (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_BASE_RELOCATION* pimage_base_relocation){
+wchar_t buf[256];
+	size_t convertedChars=0;
+	std::wstring s;
+	
+	IMAGE_BASE_RELOCATION* pimage_base_relocation_current=pimage_base_relocation;
+	while(pimage_base_relocation_current->VirtualAddress){
+	s+=TEXT("DWORD   VirtualAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_base_relocation_current->VirtualAddress);
+	s+=buf;
+
+	s+=TEXT("DWORD   SizeOfBlock\r\n");
+	DWORD num_of_items=(pimage_base_relocation_current->SizeOfBlock-8)/2;
+	wsprintf(buf,L"0x%x\r\n",pimage_base_relocation_current->SizeOfBlock);
+	s+=buf;
+	wsprintf(buf,L"num_of_items= 0x%x\r\n",num_of_items);
+	s+=buf;
+	
+	for(DWORD i=0;i<num_of_items;i++){
+	WORD current_item=*(WORD*)((char*)pimage_base_relocation_current+sizeof(IMAGE_BASE_RELOCATION)+2*i);
+	if(current_item&0xF000){wsprintf(buf,L"0x%08x\r\n",current_item&0x0FFF+pimage_base_relocation_current->VirtualAddress);s+=buf;}
+	else {wsprintf(buf,L"absolute item 0x%08x\r\n",current_item);s+=buf;}
+	}
+	pimage_base_relocation_current=(IMAGE_BASE_RELOCATION*)((char*)pimage_base_relocation_current+pimage_base_relocation_current->SizeOfBlock);
+
+	s+=TEXT("\r\n");
+	}
+	return s;
+}
+
+std::wstring CollectInformationFromIMAGE_DEBUG_DIRECTORY (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_DEBUG_DIRECTORY* pimage_debug_directory){
+				wchar_t buf[256];
+size_t convertedChars=0;
+	std::wstring s;
+	s+=TEXT("DWORD   Characteristics\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_debug_directory->Characteristics);
+	s+=buf;
+
+	s+=TEXT("DWORD   TimeDateStamp\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_debug_directory->TimeDateStamp);
+	s+=buf;
+
+	s+=TEXT("WORD   MajorVersion\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_debug_directory->MajorVersion);
+	s+=buf;
+
+	s+=TEXT("WORD   MinorVersion\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_debug_directory->MinorVersion);
+	s+=buf;
+
+	s+=TEXT("DWORD   Type\r\n");
+	wsprintf(buf,L"0x%x %s\r\n",pimage_debug_directory->Type,
+		(GetIMAGE_IMAGE_DEBUG_DIRECTORY_Type_Name(pimage_debug_directory->Type)).c_str());
+	s+=buf;
+
+	s+=TEXT("DWORD   SizeOfData\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_debug_directory->SizeOfData);
+	s+=buf;
+
+	s+=TEXT("DWORD   AddressOfRawData\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_debug_directory->AddressOfRawData);
+	s+=buf;
+
+	s+=TEXT("DWORD   PointerToRawData\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_debug_directory->PointerToRawData);
+	s+=buf;
+
+return s;
+}
+
+std::wstring CollectInformationFromIMAGE_ARCHITECTURE_HEADER (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_ARCHITECTURE_HEADER* pimage_architecture_header){
+wchar_t buf[256];
+size_t convertedChars=0;
+	std::wstring s;
+	s+=TEXT("unsigned int AmaskValue: 1\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_architecture_header->AmaskValue);
+	s+=buf;
+
+	s+=TEXT("unsigned int AmaskShift: 8\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_architecture_header->AmaskShift);
+	s+=buf;
+
+	s+=TEXT("DWORD FirstEntryRVA\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_architecture_header->FirstEntryRVA);
+	s+=buf;
+	return s;
+
+}
+
+std::wstring CollectInformationFromIMAGE_TLS_DIRECTORY (char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_TLS_DIRECTORY* pimage_tls_directory){
+wchar_t buf[256];
+size_t convertedChars=0;
+	std::wstring s;
+
+	s+=TEXT("ULONGLONG StartAddressOfRawData\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_tls_directory->StartAddressOfRawData);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG EndAddressOfRawData\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_tls_directory->EndAddressOfRawData);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG AddressOfIndex\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_tls_directory->AddressOfIndex);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG AddressOfCallBacks\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_tls_directory->AddressOfCallBacks);
+	s+=buf;
+
+	s+=TEXT("DWORD   SizeOfZeroFill\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_tls_directory->SizeOfZeroFill);
+	s+=buf;
+
+	s+=TEXT("DWORD   Characteristics\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_tls_directory->Characteristics);
+	s+=buf;
+	return s;
+}
+
+std::wstring CollectInformationFromIMAGE_LOAD_CONFIG_DIRECTORY(char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_LOAD_CONFIG_DIRECTORY* pimage_load_config_directory){
+wchar_t buf[256];
+size_t convertedChars=0;
+	std::wstring s;
+
+	s+=TEXT("DWORD      Size\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->Size);
+	s+=buf;
+
+	s+=TEXT("DWORD      TimeDateStamp\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->TimeDateStamp);
+	s+=buf;
+
+	s+=TEXT("WORD      MajorVersion\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->MajorVersion);
+	s+=buf;
+
+	s+=TEXT("WORD      MinorVersion\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->MinorVersion);
+	s+=buf;
+
+	s+=TEXT("DWORD      GlobalFlagsClear\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->GlobalFlagsClear);
+	s+=buf;
+
+	s+=TEXT("DWORD      GlobalFlagsSet\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->GlobalFlagsSet);
+	s+=buf;
+
+	s+=TEXT("DWORD      CriticalSectionDefaultTimeout\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->CriticalSectionDefaultTimeout);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  DeCommitFreeBlockThreshold\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->DeCommitFreeBlockThreshold);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  DeCommitTotalFreeThreshold\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->DeCommitTotalFreeThreshold);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  LockPrefixTable\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->LockPrefixTable);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  MaximumAllocationSize\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->MaximumAllocationSize);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  VirtualMemoryThreshold\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->VirtualMemoryThreshold);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  ProcessAffinityMask\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->ProcessAffinityMask);
+	s+=buf;
+
+	s+=TEXT("DWORD      ProcessHeapFlags\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->ProcessHeapFlags);
+	s+=buf;
+
+	s+=TEXT("WORD      CSDVersion\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->CSDVersion);
+	s+=buf;
+
+	s+=TEXT("WORD      Reserved1\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_load_config_directory->Reserved1);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  EditList\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->EditList);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  SecurityCookie\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->SecurityCookie);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  SEHandlerTable\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->SEHandlerTable);
+	s+=buf;
+
+	s+=TEXT("ULONGLONG  SEHandlerCount\r\n");
+	swprintf(buf,sizeof(buf)/sizeof(wchar_t*)-1,L"0x%llx\r\n",pimage_load_config_directory->SEHandlerCount);
+	s+=buf;
+	return s;
+
+}
+
+std::wstring CollectInformationFromIMAGE_BOUND_IMPORT_DESCRIPTOR(char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_BOUND_IMPORT_DESCRIPTOR* pimage_bound_descriptor){
+wchar_t buf[256];
+size_t convertedChars=0;
+	std::wstring s;
+
+	s+=TEXT("DWORD      TimeDateStamp\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_bound_descriptor->TimeDateStamp);
+	s+=buf;
+
+	s+=TEXT("WORD      OffsetModuleName\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_bound_descriptor->OffsetModuleName);
+	s+=buf;
+
+	s+=GetNameFromRVA(filebuffer,filelen,vec,pimage_bound_descriptor->OffsetModuleName);
+	s+=TEXT("\r\n");
+
+
+	s+=TEXT("WORD      NumberOfModuleForwarderRefs\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_bound_descriptor->NumberOfModuleForwarderRefs);
+	s+=buf;
+
+	return s;
+
+}
+std::wstring CollectInformationFromIMAGE_DELAYLOAD_DESCRIPTOR(char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_DELAYLOAD_DESCRIPTOR* pimage_delayload_descriptor){
+wchar_t buf[256];
+size_t convertedChars=0;
+	std::wstring s;
+	s+=TEXT("DWORD      TimeDateStamp\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_delayload_descriptor->Attributes.AllAttributes);
+	s+=buf;
+
+	s+=TEXT("DWORD      DllNameRVA\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_delayload_descriptor->DllNameRVA);
+	s+=buf;
+	s+=GetNameFromRVA(filebuffer,filelen,vec,pimage_delayload_descriptor->DllNameRVA);
+	s+=TEXT("\r\n");
+
+	s+=TEXT("DWORD      ModuleHandleRVA\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_delayload_descriptor->ModuleHandleRVA);
+	s+=buf;
+
+	s+=TEXT("DWORD      ImportAddressTableRVA\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_delayload_descriptor->ImportAddressTableRVA);
+	s+=buf;
+
+	s+=TEXT("DWORD      ImportNameTableRVA\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_delayload_descriptor->ImportNameTableRVA);
+	s+=buf;
+
+	s+=TEXT("DWORD      BoundImportAddressTableRVA\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_delayload_descriptor->BoundImportAddressTableRVA);
+	s+=buf;
+
+	s+=TEXT("DWORD      UnloadInformationTableRVA\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_delayload_descriptor->UnloadInformationTableRVA);
+	s+=buf;
+
+	s+=TEXT("DWORD      TimeDateStamp\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_delayload_descriptor->TimeDateStamp);
+	s+=buf;
+
+	return s;
+}
+std::wstring CollectInformationFromIMAGE_COR20_HEADER(char* filebuffer,size_t filelen,
+			std::vector<IMAGE_SECTION_HEADER>&vec,IMAGE_COR20_HEADER* pimage_cor20_header){
+
+wchar_t buf[256];
+size_t convertedChars=0;
+std::wstring s;
+s+=TEXT("DWORD      cb\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->cb);
+	s+=buf;
+
+	s+=TEXT("WORD      MajorRuntimeVersion\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->MajorRuntimeVersion);
+	s+=buf;
+
+	s+=TEXT("WORD      MinorRuntimeVersion\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->MinorRuntimeVersion);
+	s+=buf;
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      MetaData.VirtualAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->MetaData.VirtualAddress);
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      MetaData.Size\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->MetaData.Size);
+	s+=buf;
+
+	s+=TEXT("DWORD      Flags\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->Flags);
+	s+=buf;
+
+	s+=TEXT("DWORD      EntryPointToken/EntryPointRVA\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->EntryPointRVA);
+	s+=buf;
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      Resources.VirtualAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->Resources.VirtualAddress);
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      Resources.Size\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->Resources.Size);
+	s+=buf;
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      StrongNameSignature.VirtualAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->StrongNameSignature.VirtualAddress);
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      StrongNameSignature.Size\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->StrongNameSignature.Size);
+	s+=buf;
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      CodeManagerTable.VirtualAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->CodeManagerTable.VirtualAddress);
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      CodeManagerTable.Size\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->CodeManagerTable.Size);
+	s+=buf;
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      VTableFixups.VirtualAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->VTableFixups.VirtualAddress);
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      VTableFixups.Size\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->VTableFixups.Size);
+	s+=buf;
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      ExportAddressTableJumps.VirtualAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->ExportAddressTableJumps.VirtualAddress);
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      ExportAddressTableJumps.Size\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->ExportAddressTableJumps.Size);
+	s+=buf;
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      ManagedNativeHeader.VirtualAddress\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->ManagedNativeHeader.VirtualAddress);
+
+	s+=TEXT("IMAGE_DATA_DIRECTORY      ManagedNativeHeader.Size\r\n");
+	wsprintf(buf,L"0x%x\r\n",pimage_cor20_header->ManagedNativeHeader.Size);
+	s+=buf;
+
+	
+return s;
+}
+std::wstring GetNameFromFileOffset(char* filebuffer,size_t filelen,size_t FOA){
 		if(FOA>=filelen)return TEXT("");
-		unsigned int len=strlen(filebuffer+FOA);
+		size_t len=strlen(filebuffer+FOA);
 		const char* str=filebuffer+FOA;
 		if(FOA+len>=filelen)return TEXT("");
-		size_t convertedChars=-1;
+		size_t convertedChars=0;
 		wchar_t buf[256];
 		mbstowcs_s(&convertedChars,buf,sizeof(buf)/sizeof(wchar_t)-1,(const char*)(filebuffer+FOA),_TRUNCATE);
 		std::wstring s=buf;
 		
 		return s;
 	}
-std::wstring GetNameFromRVA(char* filebuffer,unsigned int filelen,std::vector<IMAGE_SECTION_HEADER>&vec,unsigned int RVA){
-	int FOA=RVAToFOA(vec,RVA);
+std::wstring GetNameFromRVA(char* filebuffer,size_t filelen,std::vector<IMAGE_SECTION_HEADER>&vec,size_t RVA){
+	ULONGLONG FOA=RVAToFOA(vec,RVA);
 	return GetNameFromFileOffset(filebuffer,filelen,FOA);
 }
 std::wstring MultiCharToWideString(const char* str){
 	wchar_t buf[256];
-	size_t convertedChars=-1;
+	size_t convertedChars=0;
 	mbstowcs_s(&convertedChars,buf,sizeof(buf)/sizeof(wchar_t)-1,str,_TRUNCATE);
 	return buf;
 }
-int RVAToFOA(std::vector<IMAGE_SECTION_HEADER>&vec,unsigned int RVA){
-		for(int i=0;i<vec.size();i++)
+size_t RVAToFOA(std::vector<IMAGE_SECTION_HEADER>&vec,size_t RVA){
+		for(size_t i=0;i<vec.size();i++)
 			if(vec[i].VirtualAddress<=RVA&&RVA<=vec[i].VirtualAddress+vec[i].SizeOfRawData)
 			{
 				//RVA-vec[i].VirtualAddress==FOA-vec[i].PointerToRawData
 				return RVA-vec[i].VirtualAddress+vec[i].PointerToRawData;
 			}
-			return -1;
+			return 0;
 	}
+std::wstring GetResourceTypeNameById(WORD id){
+	switch(id){
+	case 0x01:
+			return TEXT("Cursor");			
+			case 0x02:
+			return TEXT("Bitmap");			
+			case 0x03:
+			return TEXT("Icon");
+			case 0x04:
+			return TEXT("Menu");
+			case 0x05:
+			return TEXT("Dialog");
+			case 0x06:
+			return TEXT("String");
+			case 0x07:
+			return TEXT("Font Directory");
+			case 0x08:
+			return TEXT("Font");
+			case 0x09:
+			return TEXT("Accelerator");			
+			case 0x0a:
+			return TEXT("Unformatted");
+			case 0x0b:
+			return TEXT("MessageTable");			
+			case 0x0c:
+			return TEXT("Group Cursor");
+			case 0x0d:
+			return TEXT("Group Icon");
+			break;
+			case 0x0e:
+			return TEXT("Cursor");
+			case 0x10:
+			return TEXT("Version Information");
+			default: {
+				wchar_t buf[256];
+				wsprintf(buf,TEXT("user defined resource type id=%d"),id);
+				return buf;
+					 }
+		}
+}
+
+std::wstring GetIMAGE_FILE_HEADER_Machine_Name(int data){
+	switch(data){
+	case IMAGE_FILE_MACHINE_I386:return TEXT("IMAGE_FILE_MACHINE_I386 x86");
+	case IMAGE_FILE_MACHINE_IA64:return TEXT("IMAGE_FILE_MACHINE_IA64 Intel Itanium");
+	case IMAGE_FILE_MACHINE_AMD64:return TEXT("IMAGE_FILE_MACHINE_AMD64 x64");
+	default:return TEXT("");
+	}
+}
+std::wstring GetIMAGE_FILE_HEADER_Characterstric_Info(int data){
+	std::wstring s=TEXT("\r\n");
+	if(data&IMAGE_FILE_RELOCS_STRIPPED)s+=TEXT("IMAGE_FILE_RELOCS_STRIPPED \r\n");
+	if(data&IMAGE_FILE_EXECUTABLE_IMAGE)s+=TEXT("IMAGE_FILE_EXECUTABLE_IMAGE \r\n");
+	if(data&IMAGE_FILE_LINE_NUMS_STRIPPED)s+=TEXT("IMAGE_FILE_LINE_NUMS_STRIPPED \r\n");
+	if(data&IMAGE_FILE_LOCAL_SYMS_STRIPPED)s+=TEXT("IMAGE_FILE_LOCAL_SYMS_STRIPPED \r\n");
+	if(data&IMAGE_FILE_AGGRESIVE_WS_TRIM)s+=TEXT("IMAGE_FILE_AGGRESIVE_WS_TRIM \r\n");
+	if(data&IMAGE_FILE_LARGE_ADDRESS_AWARE)s+=TEXT("IMAGE_FILE_LARGE_ADDRESS_AWARE \r\n");
+	if(data&IMAGE_FILE_BYTES_REVERSED_LO)s+=TEXT("IMAGE_FILE_BYTES_REVERSED_LO \r\n");
+	if(data&IMAGE_FILE_32BIT_MACHINE)s+=TEXT("IMAGE_FILE_32BIT_MACHINE \r\n");
+	if(data&IMAGE_FILE_DEBUG_STRIPPED)s+=TEXT("IMAGE_FILE_DEBUG_STRIPPED ");
+	if(data&IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP)s+=TEXT("IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP \r\n");
+	if(data&IMAGE_FILE_NET_RUN_FROM_SWAP)s+=TEXT("IMAGE_FILE_NET_RUN_FROM_SWAP \r\n");
+	if(data&IMAGE_FILE_SYSTEM)s+=TEXT("IMAGE_FILE_SYSTEM \r\n");
+	if(data&IMAGE_FILE_DLL)s+=TEXT("IMAGE_FILE_DLL \r\n");
+	if(data&IMAGE_FILE_UP_SYSTEM_ONLY)s+=TEXT("IMAGE_FILE_UP_SYSTEM_ONLY \r\n");
+	if(data&IMAGE_FILE_BYTES_REVERSED_HI)s+=TEXT("IMAGE_FILE_BYTES_REVERSED_HI \r\n");
+
+	return s;
+}
+
+std::wstring GetIMAGE_OPTIONAL_HEADER_Magic_Name(int data){
+	switch (data){	
+	case IMAGE_NT_OPTIONAL_HDR32_MAGIC:return TEXT("IMAGE_NT_OPTIONAL_HDR32_MAGIC");
+	case IMAGE_NT_OPTIONAL_HDR64_MAGIC:return TEXT("IMAGE_NT_OPTIONAL_HDR64_MAGIC");
+	case IMAGE_ROM_OPTIONAL_HDR_MAGIC:return TEXT("IMAGE_ROM_OPTIONAL_HDR_MAGIC");
+
+	default:return TEXT("");
+	}
+}
+
+std::wstring GetIMAGE_OPTIONAL_HEADER_Subsystem_Name(int data){
+	switch (data){	
+	case IMAGE_SUBSYSTEM_UNKNOWN:return TEXT("IMAGE_SUBSYSTEM_UNKNOWN");
+	case IMAGE_SUBSYSTEM_NATIVE:return TEXT("IMAGE_SUBSYSTEM_NATIVE");
+	case IMAGE_SUBSYSTEM_WINDOWS_GUI:return TEXT("IMAGE_SUBSYSTEM_WINDOWS_GUI");
+	case IMAGE_SUBSYSTEM_WINDOWS_CUI:return TEXT("IMAGE_SUBSYSTEM_WINDOWS_CUI");
+	case IMAGE_SUBSYSTEM_OS2_CUI:return TEXT("IMAGE_SUBSYSTEM_OS2_CUI");
+	case IMAGE_SUBSYSTEM_POSIX_CUI:return TEXT("IMAGE_SUBSYSTEM_POSIX_CUI");
+	case IMAGE_SUBSYSTEM_WINDOWS_CE_GUI:return TEXT("IMAGE_SUBSYSTEM_WINDOWS_CE_GUI");
+	case IMAGE_SUBSYSTEM_EFI_APPLICATION:return TEXT("IMAGE_SUBSYSTEM_EFI_APPLICATION");
+	case IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER:return TEXT("IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER");
+	case IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER:return TEXT("IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER");
+	case IMAGE_SUBSYSTEM_EFI_ROM:return TEXT("IMAGE_SUBSYSTEM_EFI_ROM");
+	case IMAGE_SUBSYSTEM_XBOX:return TEXT("IMAGE_SUBSYSTEM_XBOX");
+	case IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION:return TEXT("IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION");
+
+	default:return TEXT("");
+	}
+}
+
+std::wstring GetIMAGE_OPTIONAL_HEADER_DllCharacteristics_Info(int data){
+	std::wstring s=TEXT("\r\n");
+	if(data&0x0001||data&0x0002||data&0x0004||data&0x0008||data&0x1000||data&0x2000||data&0x4000)
+		s+=TEXT("Reserved \r\n");
+	if(data&IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE)s+=TEXT("IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE \r\n");
+	if(data&IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY)s+=TEXT("IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY \r\n");
+	if(data&IMAGE_DLLCHARACTERISTICS_NX_COMPAT)s+=TEXT("IMAGE_DLLCHARACTERISTICS_NX_COMPAT \r\n");
+	if(data&IMAGE_DLLCHARACTERISTICS_NO_ISOLATION)s+=TEXT("IMAGE_DLLCHARACTERISTICS_NO_ISOLATION \r\n");
+	if(data&IMAGE_DLLCHARACTERISTICS_NO_SEH)s+=TEXT("IMAGE_DLLCHARACTERISTICS_NO_SEH \r\n");
+	if(data&IMAGE_DLLCHARACTERISTICS_NO_BIND)s+=TEXT("IMAGE_DLLCHARACTERISTICS_NO_BIND \r\n");
+	if(data&IMAGE_DLLCHARACTERISTICS_WDM_DRIVER)s+=TEXT("IMAGE_DLLCHARACTERISTICS_WDM_DRIVER \r\n");
+	if(data&IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE)s+=TEXT("IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE \r\n");
+	return s;
+
+}
+std::wstring GetIMAGE_SECTION_HEADER_Characteristics_Info(int data){
+	std::wstring s=TEXT("\r\n");
+	if(data&0x0001||data&0x0002||data&0x0004||data&0x0010||data&0x400||data&0x2000||data&0x10000)
+		s+=TEXT("Reserved \r\n");
+	if(data&IMAGE_SCN_TYPE_NO_PAD)s+=TEXT("IMAGE_SCN_TYPE_NO_PAD \r\n");
+	if(data&IMAGE_SCN_CNT_CODE)s+=TEXT("IMAGE_SCN_CNT_CODE \r\n");
+	if(data&IMAGE_SCN_CNT_INITIALIZED_DATA)s+=TEXT("IMAGE_SCN_CNT_INITIALIZED_DATA \r\n");
+	if(data&IMAGE_SCN_CNT_UNINITIALIZED_DATA)s+=TEXT("IMAGE_SCN_CNT_UNINITIALIZED_DATA \r\n");
+	if(data&IMAGE_SCN_LNK_OTHER)s+=TEXT("IMAGE_SCN_LNK_OTHER \r\n");
+	if(data&IMAGE_SCN_LNK_INFO)s+=TEXT("IMAGE_SCN_LNK_INFO \r\n");
+	if(data&IMAGE_SCN_LNK_REMOVE)s+=TEXT("IMAGE_SCN_LNK_REMOVE \r\n");
+	if(data&IMAGE_SCN_LNK_COMDAT)s+=TEXT("IMAGE_SCN_LNK_COMDAT \r\n");
+
+	if(data&IMAGE_SCN_NO_DEFER_SPEC_EXC)s+=TEXT("IMAGE_SCN_NO_DEFER_SPEC_EXC \r\n");
+	if(data&IMAGE_SCN_GPREL)s+=TEXT("IMAGE_SCN_GPREL \r\n");
+	if(data&IMAGE_SCN_MEM_PURGEABLE)s+=TEXT("IMAGE_SCN_MEM_PURGEABLE \r\n");
+	if(data&IMAGE_SCN_MEM_LOCKED)s+=TEXT("IMAGE_SCN_MEM_LOCKED \r\n");
+	if(data&IMAGE_SCN_MEM_PRELOAD)s+=TEXT("IMAGE_SCN_MEM_PRELOAD \r\n");
+	int flag=0x00F00000;
+	switch(data&flag){
+	case IMAGE_SCN_ALIGN_1BYTES:s+=TEXT("IMAGE_SCN_ALIGN_1BYTES\r\n");
+	case IMAGE_SCN_ALIGN_2BYTES:s+=TEXT("IMAGE_SCN_ALIGN_2BYTES\r\n");
+	case IMAGE_SCN_ALIGN_4BYTES:s+=TEXT("IMAGE_SCN_ALIGN_4BYTES\r\n");
+	case IMAGE_SCN_ALIGN_8BYTES:s+=TEXT("IMAGE_SCN_ALIGN_8BYTES\r\n");
+	case IMAGE_SCN_ALIGN_16BYTES:s+=TEXT("IMAGE_SCN_ALIGN_16BYTES\r\n");
+	case IMAGE_SCN_ALIGN_32BYTES:s+=TEXT("IMAGE_SCN_ALIGN_32BYTES\r\n");
+	case IMAGE_SCN_ALIGN_64BYTES:s+=TEXT("IMAGE_SCN_ALIGN_64BYTES\r\n");
+	case IMAGE_SCN_ALIGN_128BYTES:s+=TEXT("IMAGE_SCN_ALIGN_128BYTES\r\n");
+	case IMAGE_SCN_ALIGN_256BYTES:s+=TEXT("IMAGE_SCN_ALIGN_256BYTES\r\n");
+	case IMAGE_SCN_ALIGN_512BYTES:s+=TEXT("IMAGE_SCN_ALIGN_512BYTES\r\n");
+	case IMAGE_SCN_ALIGN_1024BYTES:s+=TEXT("IMAGE_SCN_ALIGN_1024BYTES\r\n");
+	case IMAGE_SCN_ALIGN_2048BYTES:s+=TEXT("IMAGE_SCN_ALIGN_2048BYTES\r\n");
+	case IMAGE_SCN_ALIGN_4096BYTES:s+=TEXT("IMAGE_SCN_ALIGN_4096BYTES\r\n");
+	case IMAGE_SCN_ALIGN_8192BYTES:s+=TEXT("IMAGE_SCN_ALIGN_8192BYTES\r\n");
+	
+	}
+	if(data&IMAGE_SCN_LNK_NRELOC_OVFL)s+=TEXT("IMAGE_SCN_LNK_NRELOC_OVFL \r\n");
+	if(data&IMAGE_SCN_MEM_DISCARDABLE)s+=TEXT("IMAGE_SCN_MEM_DISCARDABLE \r\n");
+	if(data&IMAGE_SCN_MEM_NOT_CACHED)s+=TEXT("IMAGE_SCN_MEM_NOT_CACHED \r\n");
+	if(data&IMAGE_SCN_MEM_NOT_PAGED)s+=TEXT("IMAGE_SCN_MEM_NOT_PAGED \r\n");
+	if(data&IMAGE_SCN_MEM_SHARED)s+=TEXT("IMAGE_SCN_MEM_SHARED \r\n");
+	if(data&IMAGE_SCN_MEM_EXECUTE)s+=TEXT("IMAGE_SCN_MEM_EXECUTE \r\n");
+
+	if(data&IMAGE_SCN_MEM_READ)s+=TEXT("IMAGE_SCN_MEM_READ \r\n");
+	if(data&IMAGE_SCN_MEM_WRITE)s+=TEXT("IMAGE_SCN_MEM_WRITE \r\n");	
+	return s;
+}
+std::wstring GetIMAGE_IMAGE_DEBUG_DIRECTORY_Type_Name(int data){
+	switch(data){
+	case IMAGE_DEBUG_TYPE_UNKNOWN :return TEXT("IMAGE_DEBUG_TYPE_UNKNOWN ");
+	case IMAGE_DEBUG_TYPE_COFF  :return TEXT("IMAGE_DEBUG_TYPE_COFF  ");
+	case IMAGE_DEBUG_TYPE_CODEVIEW  :return TEXT("IMAGE_DEBUG_TYPE_CODEVIEW  ");
+	case IMAGE_DEBUG_TYPE_FPO  :return TEXT("IMAGE_DEBUG_TYPE_FPO  ");
+	case IMAGE_DEBUG_TYPE_MISC  :return TEXT("IMAGE_DEBUG_TYPE_MISC  ");
+	case IMAGE_DEBUG_TYPE_EXCEPTION  :return TEXT("IMAGE_DEBUG_TYPE_EXCEPTION  ");
+	case IMAGE_DEBUG_TYPE_FIXUP  :return TEXT("IMAGE_DEBUG_TYPE_FIXUP  ");
+	case IMAGE_DEBUG_TYPE_OMAP_TO_SRC  :return TEXT("IMAGE_DEBUG_TYPE_OMAP_TO_SRC  ");
+
+	case IMAGE_DEBUG_TYPE_OMAP_FROM_SRC  :return TEXT("IMAGE_DEBUG_TYPE_OMAP_FROM_SRC  ");
+	case IMAGE_DEBUG_TYPE_BORLAND   :return TEXT("IMAGE_DEBUG_TYPE_BORLAND   ");
+	case IMAGE_DEBUG_TYPE_RESERVED10   :return TEXT("IMAGE_DEBUG_TYPE_RESERVED10   ");
+	case IMAGE_DEBUG_TYPE_CLSID   :return TEXT("IMAGE_DEBUG_TYPE_CLSID   ");
+	case 16   :return TEXT("IMAGE_DEBUG_TYPE_REPRO   ");
+	case 20  :return TEXT("IMAGE_DEBUG_TYPE_EX_DLLCHARACTERISTICS  ");
+	
+	default:return TEXT("");
+	}
+
+}
